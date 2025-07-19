@@ -1,0 +1,93 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import subprocess
+import json
+import re
+
+app = Flask(__name__)
+CORS(app)  # per consentire chiamate da React (localhost:3000)
+
+# -----------------------------
+# Toolset
+# -----------------------------
+def get_weather(city):
+    return f"Oggi a {city} c'è il sole (simulazione)."
+
+def calculate_sum(a, b):
+    return f"La somma di {a} + {b} è {a + b}."
+
+def multiply_numbers(a, b):
+    return f"La moltiplicazione di {a} x {b} è {a * b}."
+
+def feedback_area(feedback):
+    return f"Il feedback = {feedback} modificherà la predizione data dall'AI"
+
+def greet_user(name):
+    return f"Non so risponderti."
+
+TOOLS = {
+    "get_weather": get_weather,
+    "calculate_sum": calculate_sum,
+    "multiply_numbers": multiply_numbers,
+    "feedback_area": feedback_area,
+    "greet_user": greet_user
+}
+
+TOOLS_DESCRIPTIONS = """
+- calculate_sum(a,b): Usa questo tool se l’utente chiede di sommare, aggiungere, o fare la somma di due numeri interi.
+- multiply_numbers(a,b): Usa questo tool se l’utente chiede di moltiplicare, fare il prodotto o calcolare un “per” tra due numeri.
+- get_weather(city): Usa questo tool se l’utente vuole conoscere il meteo o il tempo atmosferico in una città specifica.
+- greet_user(name): Usa questo tool se l’utente vuole un saluto o un messaggio di benvenuto.
+- feedback_area(feedback): Il feedback dato dall'utente per gestire lo human in the loop.
+"""
+
+# -----------------------------
+# Query LLM (simulata o Ollama)
+# -----------------------------
+def query_llm(prompt):
+    # Prompt per LLM
+    system_message = (
+            "Sei un AI Orchestrator. In base al prompt dell'utente, devi scegliere il tool "
+            "più adatto leggendo attentamente la descrizione di ogni tool. "
+            "Rispondi SOLO con un JSON valido. Non aggiungere testo. \n\n"
+            "Esempio di risposta: {\"tool\":\"calculate_sum\",\"params\":{\"a\":2,\"b\":3}}.\n\n"
+            "Tool disponibili:\n" + TOOLS_DESCRIPTIONS + "\n\n"
+                                                         "Scegli il tool la cui descrizione corrisponde meglio al prompt. "
+                                                         "Se il prompt contiene numeri e parole come 'moltiplica', 'per', 'prodotto', usa multiply_numbers."
+    )
+    command = ["ollama", "run", "llama3", system_message + "\nUtente: " + prompt]
+    result = subprocess.run(command, capture_output=True, text=True)
+    return result.stdout.strip()
+
+def parse_llm_output(output):
+    try:
+        json_str = re.search(r'\{.*\}', output, re.S).group()
+        return json.loads(json_str)
+    except Exception as e:
+        return {"tool": "greet_user", "params": {"name": "Fallback"}}
+
+# -----------------------------
+# Endpoint unico per React
+# -----------------------------
+@app.route('/ask', methods=['POST'])
+def ask():
+    data = request.get_json()
+    if not data or 'prompt' not in data:
+        return jsonify({"error": "Serve un campo 'prompt'"}), 400
+
+    user_prompt = data['prompt']
+    llm_output = query_llm(user_prompt)
+    parsed = parse_llm_output(llm_output)
+
+    tool = parsed.get("tool")
+    params = parsed.get("params", {})
+
+    if tool in TOOLS:
+        result = TOOLS[tool](**params)
+    else:
+        result = "Non so quale tool usare."
+
+    return jsonify({"response": result, "llm_output": llm_output})
+
+if __name__ == '__main__':
+    app.run(host='127.0.0.1', port=5000)
