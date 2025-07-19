@@ -1,0 +1,55 @@
+import React, { useState } from 'react';
+
+function App() {
+  const [prompt, setPrompt] = useState('');
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const sendPrompt = async () => {
+    if (!prompt) return;
+    setLoading(true);
+
+    try {
+      const res = await fetch('http://127.0.0.1:5000/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      setResponse(data.response || 'Nessuna risposta dal server.');
+    } catch (error) {
+      console.error('Errore nella chiamata:', error);
+      setResponse('Errore nella comunicazione con il server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px', fontFamily: 'Arial' }}>
+      <h1>Chatbot con Flask e React</h1>
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Scrivi qui il tuo prompt..."
+        rows={4}
+        style={{ width: '400px', padding: '10px' }}
+      />
+      <br />
+      <button onClick={sendPrompt} style={{ marginTop: '10px', padding: '10px 20px' }}>
+        {loading ? 'Elaborazione...' : 'Invia'}
+      </button>
+      {response && (
+        <textarea
+          value={response}
+          readOnly
+          rows={4}
+          style={{ width: '400px', padding: '10px', marginTop: '10px', background: '#f0f0f0' }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default App;
